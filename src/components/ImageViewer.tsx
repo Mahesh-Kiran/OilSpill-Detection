@@ -5,6 +5,7 @@ import { useProcessingStore } from '../store/ProcessingStore';
 export const ImageViewer: React.FC = () => {
   const viewerRef = useRef<HTMLDivElement>(null);
   const osdViewer = useRef<OpenSeadragon.Viewer | null>(null);
+  const imageUrl = useRef<string | null>(null);
   
   const { 
     currentFile, 
@@ -13,6 +14,24 @@ export const ImageViewer: React.FC = () => {
     processingStatus 
   } = useProcessingStore();
 
+  // Create object URL for uploaded file
+  useEffect(() => {
+    if (currentFile) {
+      // Clean up previous URL
+      if (imageUrl.current) {
+        URL.revokeObjectURL(imageUrl.current);
+      }
+      // Create new URL for the uploaded file
+      imageUrl.current = URL.createObjectURL(currentFile);
+    }
+    
+    return () => {
+      if (imageUrl.current) {
+        URL.revokeObjectURL(imageUrl.current);
+        imageUrl.current = null;
+      }
+    };
+  }, [currentFile]);
   useEffect(() => {
     if (viewerRef.current && !osdViewer.current) {
       osdViewer.current = OpenSeadragon({
@@ -35,42 +54,8 @@ export const ImageViewer: React.FC = () => {
         constrainDuringPan: true,
         showSequenceControl: false,
       });
-
-      // Add demo tile source for demonstration
-      if (currentFile) {
-        // In a real implementation, this would be the DZI endpoint from your backend
-        // For demo purposes, we'll show a placeholder
-        osdViewer.current.addHandler('open-failed', () => {
-          console.log('Demo mode: Using placeholder image source');
-        });
-
-        // Mock DZI configuration - in real app this comes from backend
-        const mockDziConfig = {
-          Image: {
-            xmlns: 'http://schemas.microsoft.com/deepzoom/2008',
-            Url: '/mock-tiles/',
-            Format: 'jpg',
-            Overlap: '1',
-            TileSize: '256',
-            Size: {
-              Height: '4000',
-              Width: '6000'
-            }
-          }
-        };
-
-        try {
-          osdViewer.current.open({
-            type: 'legacy-image-pyramid',
-            levels: [
-              { url: 'https://images.pexels.com/photos/87651/earth-blue-planet-globe-planet-87651.jpeg', width: 6000, height: 4000 }
-            ]
-          });
-        } catch (error) {
-          console.log('Using fallback image source');
-        }
-      }
     }
+
 
     return () => {
       if (osdViewer.current) {
@@ -78,35 +63,61 @@ export const ImageViewer: React.FC = () => {
         osdViewer.current = null;
       }
     };
-  }, [currentFile]);
+  }, []);
 
+  // Load the uploaded image when file changes
+  useEffect(() => {
+    if (osdViewer.current && imageUrl.current) {
+      try {
+        // Clear existing images
+        osdViewer.current.world.removeAll();
+        
+        // Load the uploaded image
+        osdViewer.current.open({
+          type: 'image',
+          url: imageUrl.current
+        });
+      } catch (error) {
+        console.error('Error loading uploaded image:', error);
+      }
+    }
+  }, [currentFile, imageUrl.current]);
   useEffect(() => {
     if (osdViewer.current && processingStatus === 'completed') {
       // Add prediction layer when processing is complete
       if (layerVisibility.prediction) {
-        // In real implementation, this would load the prediction DZI tiles
-        console.log('Loading prediction layer with opacity:', predictionOpacity);
-        
-        // Mock adding a prediction overlay
-        const predictionTileSource = {
-          type: 'legacy-image-pyramid',
-          levels: [
-            { url: 'https://images.pexels.com/photos/62693/pexels-photo-62693.jpeg', width: 6000, height: 4000 }
-          ]
-        };
-        
         try {
           // Remove existing prediction layers first
           while (osdViewer.current.world.getItemCount() > 1) {
             osdViewer.current.world.removeItem(osdViewer.current.world.getItemAt(1));
           }
           
-          // Add prediction layer with opacity
-          osdViewer.current.addTiledImage({
-            tileSource: predictionTileSource,
-            opacity: predictionOpacity,
-            compositeOperation: 'multiply'
-          });
+          // In real implementation, this would load the prediction DZI tiles
+          // For demo, we'll create a mock prediction overlay
+          const canvas = document.createElement('canvas');
+          canvas.width = 800;
+          canvas.height = 600;
+          const ctx = canvas.getContext('2d');
+          
+          if (ctx) {
+            // Create a mock oil spill pattern
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+            ctx.fillRect(100, 100, 200, 150);
+            ctx.fillRect(400, 200, 180, 120);
+            ctx.fillRect(200, 350, 150, 100);
+            
+            const mockPredictionUrl = canvas.toDataURL();
+            
+            // Add prediction layer with opacity
+            osdViewer.current.addTiledImage({
+              tileSource: {
+                type: 'image',
+                url: mockPredictionUrl
+              },
+              opacity: predictionOpacity,
+              compositeOperation: 'source-over'
+            });
+          }
         } catch (error) {
           console.log('Error adding prediction layer:', error);
         }
